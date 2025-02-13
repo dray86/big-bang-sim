@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Big Bang Simulation</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #000;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Include Three.js from a CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r153/three.min.js"></script>
+    <script>
+      // 1. SET UP THE SCENE, CAMERA, & RENDERER
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      camera.position.z = 5;
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // 2. CREATE THE PARTICLE SYSTEM
+      // We'll generate many particles starting in a tiny sphere around the origin.
+      const particleCount = 10000;
+      const geometry = new THREE.BufferGeometry();
+      const initialPositions = new Float32Array(particleCount * 3);
+
+      for (let i = 0; i < particleCount; i++) {
+        // Generate a random point inside a small sphere (radius ~0.1)
+        const theta = Math.random() * 2 * Math.PI;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = Math.random() * 0.1; // initial radius
+
+        const x = r * Math.sin(phi) * Math.cos(theta);
+        const y = r * Math.sin(phi) * Math.sin(theta);
+        const z = r * Math.cos(phi);
+
+        initialPositions[i * 3] = x;
+        initialPositions[i * 3 + 1] = y;
+        initialPositions[i * 3 + 2] = z;
+      }
+
+      // Store the starting positions as an attribute
+      geometry.setAttribute(
+        "initialPosition",
+        new THREE.BufferAttribute(initialPositions, 3)
+      );
+      // 'position' will be computed in the shader; we initialize it the same as initialPositions.
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(initialPositions.slice(), 3)
+      );
+
+      // 3. SET UP SHADER UNIFORMS & SHADERS
+      // The uniforms include a time variable and an expansion speed factor.
+      const uniforms = {
+        time: { value: 0.0 },
+        expansionSpeed: { value: 5.0 }
+      };
+
+      // Vertex Shader: computes the new position of each particle based on time.
+      const vertexShader = `
+        uniform float time;
+        uniform float expansionSpeed;
+        attribute vec3 initialPosition;
+        void main() {
+          // Compute expansion factor: particles move away from the origin as time increases.
+          float factor = 1.0 + time * expansionSpeed;
+          vec3 newPosition = initialPosition * factor;
+
+          // Transform the new position with the model-view matrix.
+          vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
+          // Adjust point size based on depth for a realistic perspective.
+          gl_PointSize = 2.0 * (300.0 / -mvPosition.z);
+          gl_Position = projectionMatrix * mvPosition;
+        }
+      `;
+
+      // Fragment Shader: renders each particle as a glowing point with a radial fade.
+      const fragmentShader = `
+        void main() {
+          // Create a circular point with soft edges.
+          float dist = length(gl_PointCoord - vec2(0.5));
+          if (dist > 0.5) discard;
+          gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0 - dist * 2.0);
+        }
+      `;
+
+      // Create the shader material with additive blending for a glowing effect.
+      const material = new THREE.ShaderMaterial({
+        uniforms: uniforms,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthTest: false
+      });
+
+      // Create the Points object and add it to the scene.
+      const particles = new THREE.Points(geometry, material);
+      scene.add(particles);
+
+      // 4. ANIMATION LOOP
+      const clock = new THREE.Clock();
+      function animate() {
+        requestAnimationFrame(animate);
+        // Update the time uniform based on elapsed time.
+        uniforms.time.value = clock.getElapsedTime();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      // 5. HANDLE WINDOW RESIZING
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </body>
+</html>
